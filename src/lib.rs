@@ -45,9 +45,10 @@ thread_local! {
 fn log_op(op: &str, path: &str, info: String) {
     if !path.starts_with("/tmp") { return }
     if path[4..].starts_with("/intercepts") { return }
+    let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
     LOG_FILE.with(|mut log_file| {
         let time = BEGUN_AT.with(|time| Instant::now().duration_since(*time));
-        writeln!(log_file, "{:05}.{:08} {} {} {}", time.as_secs(), time.subsec_nanos(), op, path, info).unwrap();
+        writeln!(log_file, "{:05}.{:08} {} {} {}, errno {}", time.as_secs(), time.subsec_nanos(), op, path, info, errno).unwrap();
     });
 }
 
