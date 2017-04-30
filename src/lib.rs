@@ -1,4 +1,4 @@
-use std::mem;
+use std::{mem, io, fs};
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::fs::File;
@@ -31,6 +31,11 @@ macro_rules! wrap {
 
 thread_local! {
     static LOG_FILE: File = unsafe {
+        if let Err(err) = fs::create_dir("/tmp/intercepts") {
+            if err.kind() != io::ErrorKind::AlreadyExists {
+                panic!("Failed to create /tmp/intercepts: {:?}", err);
+            }
+        }
         File::create(format!("/tmp/intercepts/{}.{}.log", getpid(), pthread_self())).unwrap()
     };
 
@@ -39,6 +44,7 @@ thread_local! {
 
 fn log_op(op: &str, path: &str, info: String) {
     if !path.starts_with("/tmp") { return }
+    if path[4..].starts_with("/intercepts") { return }
     LOG_FILE.with(|mut log_file| {
         let time = BEGUN_AT.with(|time| Instant::now().duration_since(*time));
         writeln!(log_file, "{:05}.{:08} {} {} {}", time.as_secs(), time.subsec_nanos(), op, path, info).unwrap();
