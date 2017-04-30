@@ -8,6 +8,12 @@ use std::time::Instant;
 extern crate libc;
 use libc::{dlsym, getpid, pthread_self};
 
+#[cfg(target_os = "freebsd")]
+const RTLD_NEXT: *mut libc::c_void = -1isize as *mut libc::c_void;
+
+#[cfg(not(target_os = "freebsd"))]
+const RTLD_NEXT: *mut libc::c_void = libc::RTLD_NEXT;
+
 macro_rules! wrap {
     {
         $(
@@ -19,7 +25,7 @@ macro_rules! wrap {
             pub extern "C" fn $name($( $arg_n: $arg_t ),*) -> $ret_t {
                 unsafe {
                     let name_cstr = CString::new(stringify!($name)).unwrap();
-                    let orig_fn: extern fn($( $arg_t ),*) -> $ret_t = mem::transmute(dlsym(libc::RTLD_NEXT, name_cstr.as_ptr()));
+                    let orig_fn: extern fn($( $arg_t ),*) -> $ret_t = mem::transmute(dlsym(RTLD_NEXT, name_cstr.as_ptr()));
                     let $ret_n = orig_fn($( $arg_n ),*);
                     $code;
                     $ret_n
