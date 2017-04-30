@@ -1,0 +1,11 @@
+[package]
+authors = ["Lee Bousfield <ljbousfield@gmail.com>"]
+name = "intercept-fs"
+version = "0.1.0"
+
+[dependencies]
+libc = "0.2.22"
+
+[lib]
+crate-type = ["dylib"]
+name = "intercept_fs"
