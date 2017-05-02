@@ -84,12 +84,12 @@ fn log_fd_op(op: &str, fd: c_int, info: String) -> bool {
 }
 
 unsafe fn stat_info(buf: *mut libc::stat, ret: c_int) -> String {
-    format!("-> mode {} uid {} gid {} size {} -> {}", (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
+    format!("-> ino {} mode {} uid {} gid {} size {} -> {}", (*buf).st_ino, (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
 }
 
 #[cfg(not(target_os = "freebsd"))]
 unsafe fn stat64_info(buf: *mut libc::stat64, ret: c_int) -> String {
-    format!("-> mode {} uid {} gid {} size {} -> {}", (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
+    format!("-> ino {} mode {} uid {} gid {} size {} -> {}", (*buf).st_ino, (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
 }
 
 unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
