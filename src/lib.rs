@@ -112,13 +112,27 @@ wrap! {
         log_op("stat", c_str(path), stat_info(buf, ret));
     }
 
+    fn stat:(path: *const c_char, buf: *mut libc::stat) -> ret: c_int {
+        log_op("stat", c_str(path), stat_info(buf, ret));
+    }
+
     fn __lxstat,__lxstat64:(ver: c_int, path: *const c_char, buf: *mut libc::stat) -> ret: c_int {
+        log_op("lstat", c_str(path), stat_info(buf, ret));
+    }
+
+    fn lstat:(path: *const c_char, buf: *mut libc::stat) -> ret: c_int {
         log_op("lstat", c_str(path), stat_info(buf, ret));
     }
 
     fn __fxstat,__fxstat64:(ver: c_int, fd: c_int, buf: *mut libc::stat) -> ret: c_int {
         if RELEVANT_FILE_DESCRIPTORS.read().unwrap().contains(&fd) {
-            log(format!("stat {} {}", fd, stat_info(buf, ret)));
+            log(format!("fstat {} {}", fd, stat_info(buf, ret)));
+        }
+    }
+
+    fn fstat:(fd: c_int, buf: *mut libc::stat) -> ret: c_int {
+        if RELEVANT_FILE_DESCRIPTORS.read().unwrap().contains(&fd) {
+            log(format!("fstat {} {}", fd, stat_info(buf, ret)));
         }
     }
 }
