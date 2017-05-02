@@ -84,12 +84,12 @@ fn log_fd_op(op: &str, fd: c_int, info: String) -> bool {
 }
 
 unsafe fn stat_info(buf: *mut libc::stat, ret: c_int) -> String {
-    format!("-> ino {} mode {} uid {} gid {} size {} -> {}", (*buf).st_ino, (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
+    format!("-> ino {} mode {:#o} uid {} gid {} size {} -> {}", (*buf).st_ino, (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
 }
 
 #[cfg(not(target_os = "freebsd"))]
 unsafe fn stat64_info(buf: *mut libc::stat64, ret: c_int) -> String {
-    format!("-> ino {} mode {} uid {} gid {} size {} -> {}", (*buf).st_ino, (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
+    format!("-> ino {} mode {:#o} uid {} gid {} size {} -> {}", (*buf).st_ino, (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
 }
 
 unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
@@ -98,7 +98,7 @@ unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
 
 wrap! {
     fn open(path: *const c_char, flags: c_int, mode: c_int) -> ret: c_int {
-        if log_op("open", c_str(path), format!("(flags: {}, mode: {}) -> {}", flags, mode, ret)) && ret > 0 {
+        if log_op("open", c_str(path), format!("(flags: {:#o}, mode: {:#o}) -> {}", flags, mode, ret)) && ret > 0 {
             RELEVANT_FILE_DESCRIPTORS.write().unwrap().insert(ret);
         }
     }
@@ -112,7 +112,7 @@ wrap! {
     }
 
     fn mkdir(path: *const c_char, mode: c_int) -> ret: c_int {
-        log_op("mkdir", c_str(path), format!("(mode: {}) -> {}", mode, ret));
+        log_op("mkdir", c_str(path), format!("(mode: {:#o}) -> {}", mode, ret));
     }
 
     fn symlink(target: *const c_char, linkpath: *const c_char) -> ret: c_int {
