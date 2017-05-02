@@ -67,11 +67,13 @@ fn log(info: String) {
     });
 }
 
-fn log_op(op: &str, path: &str, info: String) {
-    if !path.starts_with("/tmp") { return }
-    if path[4..].starts_with("/intercepts") { return }
+fn log_op(op: &str, path: &str, info: String) -> bool {
+    if !path.starts_with("/tmp") || path[4..].starts_with("/intercepts") {
+        return false;
+    }
     let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
-    log(format!("{} {} {}, errno {}", op, path, info, errno))
+    log(format!("{} {} {}, errno {}", op, path, info, errno));
+    true
 }
 
 unsafe fn stat_info(buf: *mut libc::stat, ret: c_int) -> String {
@@ -84,8 +86,7 @@ unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
 
 wrap! {
     fn open:(path: *const c_char, flags: c_int, mode: c_int) -> ret: c_int {
-        log_op("open", c_str(path), format!("(flags: {}, mode: {}) -> {}", flags, mode, ret));
-        if ret > 0 {
+        if log_op("open", c_str(path), format!("(flags: {}, mode: {}) -> {}", flags, mode, ret)) && ret > 0 {
             RELEVANT_FILE_DESCRIPTORS.write().unwrap().insert(ret);
         }
     }
@@ -95,8 +96,6 @@ wrap! {
             if RELEVANT_FILE_DESCRIPTORS.write().unwrap().remove(&ret) {
                 log(format!("close {} -> 0", fd));
             }
-        } else {
-            log(format!("close {} -> {}", fd, ret));
         }
     }
 
