@@ -1,6 +1,6 @@
 use std::{mem, io, fs};
 use std::ffi::{CStr, CString};
-use std::os::raw::c_char;
+use std::os::raw::{c_char, c_int};
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
@@ -8,6 +8,7 @@ use std::time::Instant;
 extern crate libc;
 use libc::{dlsym, getpid, pthread_self};
 
+// Waiting for next release of libc with libc::RTLD_NEXT
 #[cfg(target_os = "freebsd")]
 const RTLD_NEXT: *mut libc::c_void = -1isize as *mut libc::c_void;
 
@@ -48,14 +49,22 @@ thread_local! {
     static BEGUN_AT: Instant = Instant::now();
 }
 
+fn log(info: String) {
+    let time = BEGUN_AT.with(|time| Instant::now().duration_since(*time));
+    LOG_FILE.with(|mut log_file| {
+        writeln!(log_file, "{:05}.{:08} {}", time.as_secs(), time.subsec_nanos(), info).unwrap();
+    });
+}
+
 fn log_op(op: &str, path: &str, info: String) {
     if !path.starts_with("/tmp") { return }
     if path[4..].starts_with("/intercepts") { return }
     let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
-    LOG_FILE.with(|mut log_file| {
-        let time = BEGUN_AT.with(|time| Instant::now().duration_since(*time));
-        writeln!(log_file, "{:05}.{:08} {} {} {}, errno {}", time.as_secs(), time.subsec_nanos(), op, path, info, errno).unwrap();
-    });
+    log(format!("{} {} {}, errno {}", op, path, info, errno))
+}
+
+unsafe fn stat_info(buf: *mut libc::stat) -> String {
+    format!("-> mode {} uid {} gid {} size {}", (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size)
 }
 
 unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
@@ -73,5 +82,17 @@ wrap! {
 
     fn symlink(target: *const c_char, linkpath: *const c_char) -> ret: i32 {
         log_op("symlink", c_str(linkpath), format!("-> {} -> {}", c_str(target), ret));
+    }
+
+    fn stat(path: *const c_char, buf: *mut libc::stat) -> ret: i32 {
+        log_op("stat", c_str(path), stat_info(buf));
+    }
+
+    fn lstat(path: *const c_char, buf: *mut libc::stat) -> ret: i32 {
+        log_op("stat", c_str(path), stat_info(buf));
+    }
+
+    fn fstat(fd: c_int, buf: *mut libc::stat) -> ret: i32 {
+        log(format!("stat {} {} -> {}", fd, stat_info(buf), ret));
     }
 }
