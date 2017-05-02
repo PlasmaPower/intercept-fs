@@ -65,8 +65,12 @@ fn log(info: String) {
     });
 }
 
+fn path_matches(path: &str) -> bool {
+    path.starts_with("/tmp") && !path[4..].starts_with("/intercepts")
+}
+
 fn log_op(op: &str, path: &str, info: String) -> bool {
-    if !path.starts_with("/tmp") || path[4..].starts_with("/intercepts") {
+    if !path_matches(path) {
         return false;
     }
     let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
@@ -80,6 +84,16 @@ fn log_fd_op(op: &str, fd: c_int, info: String) -> bool {
     }
     let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
     log(format!("{} {} {}, errno {}", op, fd, info, errno));
+    true
+}
+
+fn log_at_op(op: &str, dfd: c_int, path: &str, info: String) -> bool {
+    // This could match better, but it'd be slower
+    if !path_matches(path) && (dfd < 0 || !RELEVANT_FILE_DESCRIPTORS.read().unwrap().contains(&dfd)) {
+        return false;
+    }
+    let errno = io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    log(format!("{} {} {} {}, errno {}", op, dfd, path, info, errno));
     true
 }
 
@@ -117,6 +131,19 @@ wrap! {
 
     fn symlink(target: *const c_char, linkpath: *const c_char) -> ret: c_int {
         log_op("symlink", c_str(linkpath), format!("-> {} -> {}", c_str(target), ret));
+    }
+
+    fn chmod(path: *const c_char, mode: c_int) -> ret: c_int {
+        log_op("chmod", c_str(path), format!("mode: {:#o} -> {}", mode, ret));
+    }
+
+    fn fchmod(fd: c_int, mode: c_int) -> ret: c_int {
+        log_fd_op("fchmod", fd, format!("mode: {:#o} -> {}", mode, ret));
+    }
+
+    // For some reasons a lot of things like using fchmodat
+    fn fchmodat(dfd: c_int, path: *const c_char, mode: c_int) -> ret: c_int {
+        log_at_op("fchmodat", dfd, c_str(path), format!("mode: {:#o} -> {}", mode, ret));
     }
 
     fn __xstat(ver: c_int, path: *const c_char, buf: *mut libc::stat) -> ret: c_int {
@@ -164,10 +191,10 @@ wrap! {
     }
 
     fn __fxstat64(ver: c_int, fd: c_int, buf: *mut libc::stat64) -> ret: c_int {
-        log_fd_op("fstat", fd, stat64_info(buf, ret));
+        log_fd_op("fstat64", fd, stat64_info(buf, ret));
     }
 
     fn fstat64(fd: c_int, buf: *mut libc::stat64) -> ret: c_int {
-        log_fd_op("fstat", fd, stat64_info(buf, ret));
+        log_fd_op("fstat64", fd, stat64_info(buf, ret));
     }
 }
