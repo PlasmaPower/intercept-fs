@@ -4,9 +4,14 @@ use std::os::raw::{c_char, c_int};
 use std::fs::File;
 use std::io::Write;
 use std::time::Instant;
+use std::collections::HashSet;
+use std::sync::RwLock;
 
 extern crate libc;
 use libc::{dlsym, getpid, pthread_self};
+
+#[macro_use]
+extern crate lazy_static;
 
 // Waiting for next release of libc with libc::RTLD_NEXT
 #[cfg(target_os = "freebsd")]
@@ -18,21 +23,23 @@ const RTLD_NEXT: *mut libc::c_void = libc::RTLD_NEXT;
 macro_rules! wrap {
     {
         $(
-            fn $name:ident($( $arg_n:ident : $arg_t:ty ),*) -> $ret_n:ident : $ret_t:ty $code:block
+            fn $($name:ident),+ : $args:tt -> $ret_n:ident : $ret_t:ty $code:block
         )*
     } => {
-        $(
-            #[no_mangle]
-            pub extern "C" fn $name($( $arg_n: $arg_t ),*) -> $ret_t {
-                unsafe {
-                    let name_cstr = CString::new(stringify!($name)).unwrap();
-                    let orig_fn: extern fn($( $arg_t ),*) -> $ret_t = mem::transmute(dlsym(RTLD_NEXT, name_cstr.as_ptr()));
-                    let $ret_n = orig_fn($( $arg_n ),*);
-                    $code;
-                    $ret_n
-                }
+        $( $( wrap!(@expanded $name $args -> $ret_n : $ret_t $code); )+ )*
+    };
+
+    (@expanded $name:ident($( $arg_n:ident : $arg_t:ty ),*) -> $ret_n:ident : $ret_t:ty $code:block) => {
+        #[no_mangle]
+        pub extern "C" fn $name($( $arg_n: $arg_t ),*) -> $ret_t {
+            unsafe {
+                let name_cstr = CString::new(stringify!($name)).unwrap();
+                let orig_fn: extern fn($( $arg_t ),*) -> $ret_t = mem::transmute(dlsym(RTLD_NEXT, name_cstr.as_ptr()));
+                let $ret_n = orig_fn($( $arg_n ),*);
+                $code;
+                $ret_n
             }
-        )*
+        }
     };
 }
 
@@ -49,6 +56,10 @@ thread_local! {
     static BEGUN_AT: Instant = Instant::now();
 }
 
+lazy_static! {
+    static ref RELEVANT_FILE_DESCRIPTORS: RwLock<HashSet<c_int>> = RwLock::new(HashSet::new());
+}
+
 fn log(info: String) {
     let time = BEGUN_AT.with(|time| Instant::now().duration_since(*time));
     LOG_FILE.with(|mut log_file| {
@@ -63,8 +74,8 @@ fn log_op(op: &str, path: &str, info: String) {
     log(format!("{} {} {}, errno {}", op, path, info, errno))
 }
 
-unsafe fn stat_info(buf: *mut libc::stat) -> String {
-    format!("-> mode {} uid {} gid {} size {}", (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size)
+unsafe fn stat_info(buf: *mut libc::stat, ret: c_int) -> String {
+    format!("-> mode {} uid {} gid {} size {} -> {}", (*buf).st_mode, (*buf).st_uid, (*buf).st_gid, (*buf).st_size, ret)
 }
 
 unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
@@ -72,27 +83,42 @@ unsafe fn c_str<'a>(ptr: *const c_char) -> &'a str {
 }
 
 wrap! {
-    fn open(path: *const c_char, flags: i32, mode: i32) -> ret: i32 {
+    fn open:(path: *const c_char, flags: c_int, mode: c_int) -> ret: c_int {
         log_op("open", c_str(path), format!("(flags: {}, mode: {}) -> {}", flags, mode, ret));
+        if ret > 0 {
+            RELEVANT_FILE_DESCRIPTORS.write().unwrap().insert(ret);
+        }
     }
 
-    fn mkdir(path: *const c_char, mode: i32) -> ret: i32 {
+    fn close:(fd: c_int) -> ret: c_int {
+        if ret == 0 {
+            if RELEVANT_FILE_DESCRIPTORS.write().unwrap().remove(&ret) {
+                log(format!("close {} -> 0", fd));
+            }
+        } else {
+            log(format!("close {} -> {}", fd, ret));
+        }
+    }
+
+    fn mkdir:(path: *const c_char, mode: c_int) -> ret: c_int {
         log_op("mkdir", c_str(path), format!("(mode: {}) -> {}", mode, ret));
     }
 
-    fn symlink(target: *const c_char, linkpath: *const c_char) -> ret: i32 {
+    fn symlink:(target: *const c_char, linkpath: *const c_char) -> ret: c_int {
         log_op("symlink", c_str(linkpath), format!("-> {} -> {}", c_str(target), ret));
     }
 
-    fn stat(path: *const c_char, buf: *mut libc::stat) -> ret: i32 {
-        log_op("stat", c_str(path), stat_info(buf));
+    fn __xstat,__xstat64:(ver: c_int, path: *const c_char, buf: *mut libc::stat) -> ret: c_int {
+        log_op("stat", c_str(path), stat_info(buf, ret));
     }
 
-    fn lstat(path: *const c_char, buf: *mut libc::stat) -> ret: i32 {
-        log_op("stat", c_str(path), stat_info(buf));
+    fn __lxstat,__lxstat64:(ver: c_int, path: *const c_char, buf: *mut libc::stat) -> ret: c_int {
+        log_op("lstat", c_str(path), stat_info(buf, ret));
     }
 
-    fn fstat(fd: c_int, buf: *mut libc::stat) -> ret: i32 {
-        log(format!("stat {} {} -> {}", fd, stat_info(buf), ret));
+    fn __fxstat,__fxstat64:(ver: c_int, fd: c_int, buf: *mut libc::stat) -> ret: c_int {
+        if RELEVANT_FILE_DESCRIPTORS.read().unwrap().contains(&fd) {
+            log(format!("stat {} {}", fd, stat_info(buf, ret)));
+        }
     }
 }
